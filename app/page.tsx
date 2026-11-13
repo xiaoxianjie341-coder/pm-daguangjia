@@ -89,6 +89,22 @@ export default async function TodayPage({
           <button type="submit">打开</button>
         </form>
       </header>
+      {page.dataGaps.length > 0 ? (
+        <section className="data-gaps" aria-labelledby="gaps-heading">
+          <h2 id="gaps-heading">数据缺口</h2>
+          <ul>
+            {page.dataGaps.map((gap) => (
+              <li key={gap.topic}>
+                <p className="data-gap-topic">
+                  <strong>{gap.topic}</strong>
+                  <span>{gap.present ? "已有" : "缺失"}</span>
+                </p>
+                <p className="data-gap-record">{gap.record}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       <div className="board">
         <section className="list-pane" aria-labelledby="risk-heading">
           <h2 id="risk-heading">风险卡</h2>

@@ -1379,3 +1379,41 @@ test("已隐藏或已解决的风险卡不能改标题、说明或加关键节�
     db.close();
   }
 });
+
+test("安克的生产种子只放入项目，并记下缺失的风险卡、关键节点、超阈值、待办和消耗条", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const page = openTodayPage(db);
+
+    assert.equal(page.list, "today");
+    assert.equal(page.project.name, "安克 · A30 睡眠耳机");
+    assert.equal(
+      page.riskCards.filter((card) => card.consumptionBar !== null).length,
+      0,
+    );
+    assert.deepEqual(page.riskCards, []);
+
+    const gaps = Object.fromEntries(
+      page.dataGaps.map((gap) => [gap.topic, gap]),
+    );
+    assert.equal(gaps["项目"]?.present, true);
+    assert.match(gaps["项目"]?.record ?? "", /安克 · A30 睡眠耳机/);
+    assert.equal(gaps["风险卡"]?.present, false);
+    assert.match(gaps["风险卡"]?.record ?? "", /快照/);
+    assert.match(gaps["风险卡"]?.record ?? "", /K 进度超阈值/);
+    assert.match(gaps["风险卡"]?.record ?? "", /FS 进度超阈值/);
+    assert.match(gaps["风险卡"]?.record ?? "", /待办/);
+    assert.equal(gaps["关键节点"]?.present, false);
+    assert.match(gaps["关键节点"]?.record ?? "", /关键节点/);
+    assert.equal(gaps["消耗条"]?.present, false);
+    assert.match(gaps["消耗条"]?.record ?? "", /已消耗/);
+    assert.match(gaps["消耗条"]?.record ?? "", /计划/);
+
+    const seeded = JSON.stringify(page);
+    for (const demo of ["应耗 10万", "454677.51", "应发 10", "已发 3", "实耗 2万", "壳样例", "事项卡"]) {
+      assert.equal(seeded.includes(demo), false, demo);
+    }
+  } finally {
+    db.close();
+  }
+});
