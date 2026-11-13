@@ -2,6 +2,24 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { ensureTodayPageSchema } from "./index.ts";
 
+export function insertFixtureKeyNode(
+  db: DatabaseSync,
+  node: {
+    riskCardId: string;
+    content: string;
+    date: string;
+    link?: string | null;
+  },
+): { id: string } {
+  ensureTodayPageSchema(db);
+  const id = randomUUID();
+  db.prepare(
+    `INSERT INTO key_nodes (id, risk_card_id, content, node_date, link)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(id, node.riskCardId, node.content, node.date, node.link ?? null);
+  return { id };
+}
+
 export function insertFixtureProject(
   db: DatabaseSync,
   project: { id: string; name: string },
