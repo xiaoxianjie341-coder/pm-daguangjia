@@ -13,17 +13,27 @@ export type RiskCard = {
   title: string;
 };
 
+export type KeyNode = {
+  id: string;
+  content: string;
+  date: string;
+  link: string | null;
+  marked: boolean;
+};
+
 export type TodayPage = {
   project: Project;
   date: string;
   projects: Project[];
   riskCards: RiskCard[];
   selectedRiskCardId: string | null;
+  keyNodes: KeyNode[];
 };
 
 export type OpenTodayPageInput = {
   projectId?: string;
   date?: string;
+  riskCardId?: string;
 };
 
 export function openTodayPage(
@@ -35,7 +45,7 @@ export function openTodayPage(
     .prepare(`SELECT id, name FROM projects ORDER BY rowid ASC`)
     .all() as Project[];
   const project = resolveProject(projects, input.projectId);
-  // 日期只显示在页面上，不参与筛选。今日列表是该项目当前未隐藏、未解决的风险卡。
+  // 日期不筛选今日列表。列表仍是该项目当前未隐藏、未解决的风险卡；日期只标出当天的关键节点。
   const riskCards = db
     .prepare(
       `SELECT id, title
@@ -44,13 +54,59 @@ export function openTodayPage(
        ORDER BY rowid ASC`,
     )
     .all(project.id) as RiskCard[];
+  const selectedRiskCardId = resolveSelectedRiskCardId(
+    riskCards,
+    input.riskCardId,
+  );
+  const date = displayDate(input.date);
   return {
     project,
-    date: displayDate(input.date),
+    date,
     projects,
     riskCards,
-    selectedRiskCardId: riskCards[0]?.id ?? null,
+    selectedRiskCardId,
+    keyNodes: readKeyNodes(db, selectedRiskCardId, date),
   };
+}
+
+type KeyNodeRow = {
+  id: string;
+  content: string;
+  node_date: string;
+  link: string | null;
+};
+
+function readKeyNodes(
+  db: DatabaseSync,
+  riskCardId: string | null,
+  date: string,
+): KeyNode[] {
+  if (!riskCardId) return [];
+  const rows = db
+    .prepare(
+      `SELECT id, content, node_date, link
+       FROM key_nodes
+       WHERE risk_card_id = ?
+       ORDER BY rowid ASC`,
+    )
+    .all(riskCardId) as KeyNodeRow[];
+  return rows.map((row) => ({
+    id: row.id,
+    content: row.content,
+    date: row.node_date,
+    link: row.link ? row.link : null,
+    marked: row.node_date === date,
+  }));
+}
+
+function resolveSelectedRiskCardId(
+  riskCards: RiskCard[],
+  riskCardId: string | undefined,
+): string | null {
+  if (riskCardId && riskCards.some((card) => card.id === riskCardId)) {
+    return riskCardId;
+  }
+  return riskCards[0]?.id ?? null;
 }
 
 function resolveProject(
@@ -96,6 +152,13 @@ export function ensureTodayPageSchema(db: DatabaseSync): void {
       hidden INTEGER NOT NULL DEFAULT 0,
       resolved INTEGER NOT NULL DEFAULT 0,
       created_on TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS key_nodes (
+      id TEXT PRIMARY KEY,
+      risk_card_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      node_date TEXT NOT NULL,
+      link TEXT
     );
   `);
   db.prepare(
