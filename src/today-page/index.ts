@@ -9,8 +9,8 @@ export type Project = {
 };
 
 export type ConsumptionBar = {
-  consumed: number;
-  planned: number;
+  readonly consumed: number;
+  readonly planned: number;
 };
 
 export type RiskCard = {
