@@ -34,6 +34,36 @@ export type KeyNode = {
 
 export type TodayList = "today" | "hidden" | "resolved";
 
+export type DataGap = {
+  topic: "项目" | "风险卡" | "关键节点" | "消耗条";
+  present: boolean;
+  record: string;
+};
+
+const ANKER_DATA_GAPS: readonly DataGap[] = [
+  {
+    topic: "项目",
+    present: true,
+    record: "项目 安克 · A30 睡眠耳机 已在。",
+  },
+  {
+    topic: "风险卡",
+    present: false,
+    record:
+      "没有可复核的安克快照，因此没有写入风险卡。K 进度超阈值和 FS 进度超阈值没有找到可核对的事件，所以没有对应的风险卡。应落成风险卡的待办没有找到可核对的条目，因此没有新增。",
+  },
+  {
+    topic: "关键节点",
+    present: false,
+    record: "没有可复核的安克快照，因此没有写入关键节点。",
+  },
+  {
+    topic: "消耗条",
+    present: false,
+    record: "已消耗和计划都缺失，因此安克不展示消耗条。",
+  },
+];
+
 export type TodayPage = {
   project: Project;
   date: string;
@@ -42,6 +72,7 @@ export type TodayPage = {
   riskCards: RiskCard[];
   selectedRiskCardId: string | null;
   keyNodes: KeyNode[];
+  dataGaps: readonly DataGap[];
 };
 
 export type OpenTodayPageInput = {
@@ -76,6 +107,7 @@ export function openTodayPage(
     riskCards,
     selectedRiskCardId,
     keyNodes: readKeyNodes(db, selectedRiskCardId, date),
+    dataGaps: project.id === ANKER_PROJECT_ID ? ANKER_DATA_GAPS : [],
   };
 }
 
