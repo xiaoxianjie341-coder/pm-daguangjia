@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { addKeyNode, createRiskCard, updateRiskCard } from "./index";
 import { withTodayPageDatabase } from "./production";
+import { field, todayPageHref } from "./request";
 
 export async function createRiskCardAction(formData: FormData): Promise<void> {
   const projectId = field(formData, "projectId");
@@ -18,7 +19,7 @@ export async function createRiskCardAction(formData: FormData): Promise<void> {
       date,
     }),
   );
-  redirect(todayHref({ projectId, date, riskCardId: created.id }));
+  redirect(todayPageHref({ projectId, date, riskCardId: created.id }));
 }
 
 export async function updateRiskCardAction(formData: FormData): Promise<void> {
@@ -32,7 +33,7 @@ export async function updateRiskCardAction(formData: FormData): Promise<void> {
       description: field(formData, "description"),
     }),
   );
-  redirect(todayHref({ projectId, date, riskCardId }));
+  redirect(todayPageHref({ projectId, date, riskCardId }));
 }
 
 export async function addKeyNodeAction(formData: FormData): Promise<void> {
@@ -44,26 +45,11 @@ export async function addKeyNodeAction(formData: FormData): Promise<void> {
       riskCardId,
       content: field(formData, "content"),
       link: field(formData, "link"),
+      owner: field(formData, "owner"),
+      deadline: field(formData, "deadline"),
+      source: field(formData, "source"),
       date,
     }),
   );
-  redirect(todayHref({ projectId, date, riskCardId }));
-}
-
-function field(formData: FormData, name: string): string {
-  const value = formData.get(name);
-  return typeof value === "string" ? value : "";
-}
-
-function todayHref(input: {
-  projectId: string;
-  date: string;
-  riskCardId?: string;
-}): string {
-  const params = new URLSearchParams();
-  if (input.projectId) params.set("project", input.projectId);
-  if (input.date) params.set("date", input.date);
-  if (input.riskCardId) params.set("card", input.riskCardId);
-  const query = params.toString();
-  return query ? `/?${query}` : "/";
+  redirect(todayPageHref({ projectId, date, riskCardId }));
 }

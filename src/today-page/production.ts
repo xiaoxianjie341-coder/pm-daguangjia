@@ -4,12 +4,14 @@ import { DatabaseSync } from "node:sqlite";
 
 const defaultDatabasePath = path.join(process.cwd(), "data", "pm.sqlite");
 
-export function withTodayPageDatabase<T>(read: (db: DatabaseSync) => T): T {
+export function withTodayPageDatabase<T>(
+  operate: (db: DatabaseSync) => T,
+): T {
   const file = process.env.PM_SQLITE_PATH ?? defaultDatabasePath;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   try {
-    return read(db);
+    return operate(db);
   } finally {
     db.close();
   }

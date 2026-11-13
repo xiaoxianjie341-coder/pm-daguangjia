@@ -22,6 +22,7 @@ import {
   type OpenTodayPageInput,
 } from "./index.ts";
 import * as todayPage from "./index.ts";
+import { renderTodayPage } from "./render-today-page.ts";
 
 test("默认项目的今日一页是安克，没有风险卡时今日列表为空", () => {
   const db = new DatabaseSync(":memory:");
@@ -1218,6 +1219,159 @@ test("给已有风险卡新增关键节点后再次打开能看到，且不另�
   }
 });
 
+test("新增关键节点可以带上负责人、截止时间和来源，空字符串仍不出现", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const projectId = openTodayPage(db).project.id;
+    const created = createRiskCard(db, {
+      projectId,
+      title: "夹具-继续跟的卡",
+      description: "夹具-左边只有说明",
+      date: "2026-11-01",
+    });
+    addKeyNode(db, {
+      riskCardId: created.id,
+      content: "夹具-补上负责人和来源",
+      link: "https://example.com/fixture-owner",
+      owner: "夹具-周宁",
+      deadline: "2026-12-01",
+      source: "夹具-电话",
+      date: "2026-11-13",
+    });
+    addKeyNode(db, {
+      riskCardId: created.id,
+      content: "夹具-空白字段不留下",
+      owner: "",
+      deadline: "",
+      source: "",
+      date: "2026-11-13",
+    });
+
+    const page = openTodayPage(db, {
+      date: "2026-11-13",
+      riskCardId: created.id,
+    });
+
+    assert.deepEqual(
+      page.riskCards.map((card) => ({
+        title: card.title,
+        description: card.description,
+      })),
+      [
+        {
+          title: "夹具-继续跟的卡",
+          description: "夹具-左边只有说明",
+        },
+      ],
+    );
+    assert.equal("owner" in page.riskCards[0], false);
+    assert.equal("deadline" in page.riskCards[0], false);
+    assert.equal("source" in page.riskCards[0], false);
+    assert.deepEqual(
+      page.keyNodes.map((node) => ({
+        content: node.content,
+        link: node.link,
+        owner: node.owner,
+        deadline: node.deadline,
+        source: node.source,
+      })),
+      [
+        {
+          content: "夹具-补上负责人和来源",
+          link: "https://example.com/fixture-owner",
+          owner: "夹具-周宁",
+          deadline: "2026-12-01",
+          source: "夹具-电话",
+        },
+        {
+          content: "夹具-空白字段不留下",
+          link: null,
+          owner: null,
+          deadline: null,
+          source: null,
+        },
+      ],
+    );
+
+    const hidden = insertFixtureRiskCard(db, {
+      title: "夹具-已隐藏不能加节点",
+      hidden: true,
+    });
+    insertFixtureKeyNode(db, {
+      riskCardId: hidden.id,
+      content: "夹具-隐藏卡原节点",
+      date: "2026-11-01",
+    });
+    const resolved = insertFixtureRiskCard(db, {
+      title: "夹具-已解决不能加节点",
+      resolved: true,
+    });
+    insertFixtureKeyNode(db, {
+      riskCardId: resolved.id,
+      content: "夹具-解决卡原节点",
+      date: "2026-11-01",
+    });
+
+    assert.throws(
+      () =>
+        addKeyNode(db, {
+          riskCardId: hidden.id,
+          content: "夹具-不该加在隐藏卡",
+          owner: "夹具-周宁",
+          deadline: "2026-12-01",
+          source: "夹具-电话",
+          date: "2026-11-13",
+        }),
+      /已隐藏或已解决/,
+    );
+    assert.throws(
+      () =>
+        addKeyNode(db, {
+          riskCardId: resolved.id,
+          content: "夹具-不该加在解决卡",
+          owner: "夹具-周宁",
+          deadline: "2026-12-01",
+          source: "夹具-电话",
+          date: "2026-11-13",
+        }),
+      /已隐藏或已解决/,
+    );
+
+    const hiddenPage = openTodayPage(db, {
+      list: "hidden",
+      date: "2026-11-13",
+      riskCardId: hidden.id,
+    });
+    assert.deepEqual(
+      hiddenPage.keyNodes.map((node) => ({
+        content: node.content,
+        owner: node.owner,
+        deadline: node.deadline,
+        source: node.source,
+      })),
+      [
+        {
+          content: "夹具-隐藏卡原节点",
+          owner: null,
+          deadline: null,
+          source: null,
+        },
+      ],
+    );
+    const resolvedPage = openTodayPage(db, {
+      list: "resolved",
+      date: "2026-11-13",
+      riskCardId: resolved.id,
+    });
+    assert.deepEqual(
+      resolvedPage.keyNodes.map((node) => node.content),
+      ["夹具-解决卡原节点"],
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test("关键节点内容为空时不加节点", () => {
   const db = new DatabaseSync(":memory:");
   try {
@@ -1417,3 +1571,156 @@ test("安克的生产种子只放入项目，并记下缺失的风险卡、关�
     db.close();
   }
 });
+
+test("今日列表的改打开这张卡的标题和说明，已隐藏和已解决不出现改", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "today-page-edit-"));
+  const file = path.join(dir, "pm.sqlite");
+  const previousDatabase = process.env.PM_SQLITE_PATH;
+  try {
+    const db = new DatabaseSync(file);
+    const projectId = openTodayPage(db).project.id;
+    const first = createRiskCard(db, {
+      projectId,
+      title: "夹具-甲",
+      description: "夹具-甲的说明",
+      date: "2026-11-13",
+    });
+    const second = createRiskCard(db, {
+      projectId,
+      title: "夹具-乙",
+      description: "夹具-乙的说明",
+      date: "2026-11-13",
+    });
+    const hidden = createRiskCard(db, {
+      projectId,
+      title: "夹具-已隐藏",
+      date: "2026-11-13",
+    });
+    hideRiskCard(db, { riskCardId: hidden.id });
+    const resolved = createRiskCard(db, {
+      projectId,
+      title: "夹具-已解决",
+      date: "2026-11-13",
+    });
+    resolveRiskCard(db, { riskCardId: resolved.id });
+    db.close();
+
+    const todayHtml = await renderTodayPage(file, {
+      date: "2026-11-13",
+      list: "today",
+    });
+    const nodeForm = formBody(todayHtml, "新增关键节点");
+    assert.match(nodeForm, /name="owner"/);
+    assert.match(nodeForm, /name="deadline"/);
+    assert.match(nodeForm, /name="source"/);
+
+    const edit = editForm(todayHtml);
+    assert.match(edit.body, /name="title"[^>]*value="夹具-甲"/);
+    assert.match(edit.body, /name="description"[^>]*>夹具-甲的说明<\/textarea>/);
+    assert.match(edit.body, new RegExp(`name="riskCardId" value="${first.id}"`));
+    assert.equal(riskCardMarkup(cardItem(todayHtml, first.id)).includes("负责人"), false);
+    assert.equal(riskCardMarkup(cardItem(todayHtml, first.id)).includes("截止时间"), false);
+    assert.equal(riskCardMarkup(cardItem(todayHtml, first.id)).includes("来源"), false);
+
+    for (const card of [first, second]) {
+      const item = cardItem(todayHtml, card.id);
+      assert.match(item, /<summary class="card-action">删<\/summary>/);
+      assert.match(item, /<button type="submit" class="card-action">确认删除<\/button>/);
+      assert.match(item, /<button type="submit" class="card-action">隐藏<\/button>/);
+      assert.match(item, /<button type="submit" class="card-action">解决<\/button>/);
+      assert.equal(
+        editHref(item),
+        `/?project=${projectId}&date=2026-11-13&list=today&card=${card.id}#${edit.id}`,
+      );
+    }
+
+    const secondHtml = await renderTodayPage(file, {
+      date: "2026-11-13",
+      list: "today",
+      card: second.id,
+    });
+    const secondEdit = editForm(secondHtml);
+    assert.equal(secondEdit.id, edit.id);
+    assert.match(secondEdit.body, /name="title"[^>]*value="夹具-乙"/);
+    assert.match(
+      secondEdit.body,
+      /name="description"[^>]*>夹具-乙的说明<\/textarea>/,
+    );
+    assert.match(
+      secondEdit.body,
+      new RegExp(`name="riskCardId" value="${second.id}"`),
+    );
+
+    const hiddenHtml = await renderTodayPage(file, {
+      date: "2026-11-13",
+      list: "hidden",
+    });
+    const hiddenItem = cardItem(hiddenHtml, hidden.id);
+    assert.equal(hiddenHtml.includes(">改<"), false);
+    assert.match(hiddenItem, /<button type="submit" class="card-action">恢复<\/button>/);
+    assert.match(hiddenItem, /<summary class="card-action">删<\/summary>/);
+    assert.match(hiddenItem, /<button type="submit" class="card-action">确认删除<\/button>/);
+
+    const resolvedHtml = await renderTodayPage(file, {
+      date: "2026-11-13",
+      list: "resolved",
+    });
+    const resolvedItem = cardItem(resolvedHtml, resolved.id);
+    assert.equal(resolvedHtml.includes(">改<"), false);
+    assert.match(
+      resolvedItem,
+      /<button type="submit" class="card-action">重新打开<\/button>/,
+    );
+    assert.match(resolvedItem, /<summary class="card-action">删<\/summary>/);
+    assert.match(
+      resolvedItem,
+      /<button type="submit" class="card-action">确认删除<\/button>/,
+    );
+  } finally {
+    if (previousDatabase === undefined) {
+      delete process.env.PM_SQLITE_PATH;
+    } else {
+      process.env.PM_SQLITE_PATH = previousDatabase;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function editForm(html: string): { id: string; body: string } {
+  const body = formBody(html, "编辑标题和说明");
+  const open = body.slice(0, body.indexOf(">") + 1);
+  const id = /\bid="([^"]+)"/.exec(open)?.[1];
+  assert.ok(id, "编辑标题和说明的表单要有 id，改才能指到它");
+  return { id, body };
+}
+
+function formBody(html: string, heading: string): string {
+  const marker = `<h3>${heading}</h3>`;
+  const at = html.indexOf(marker);
+  assert.ok(at >= 0, heading);
+  const formStart = html.lastIndexOf("<form", at);
+  const formEnd = html.indexOf("</form>", at);
+  assert.ok(formStart >= 0 && formEnd > at);
+  return html.slice(formStart, formEnd);
+}
+
+function cardItem(html: string, cardId: string): string {
+  const needle = `card=${cardId}`;
+  const at = html.indexOf(needle);
+  assert.ok(at >= 0, cardId);
+  const start = html.lastIndexOf("<li", at);
+  const end = html.indexOf("</li>", at);
+  assert.ok(start >= 0 && end > start);
+  return html.slice(start, end);
+}
+
+function riskCardMarkup(item: string): string {
+  const match = item.match(/<a class="risk-card[^"]*"[\s\S]*?<\/a>/);
+  assert.ok(match);
+  return match[0];
+}
+
+function editHref(item: string): string | undefined {
+  const match = item.match(/<a class="card-action" href="([^"]+)">改<\/a>/);
+  return match?.[1].replaceAll("&amp;", "&");
+}

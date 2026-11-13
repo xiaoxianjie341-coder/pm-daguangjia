@@ -221,6 +221,11 @@ body {
   cursor: pointer;
 }
 
+a.card-action {
+  display: inline-block;
+  text-decoration: none;
+}
+
 .delete-confirm {
   position: relative;
 }

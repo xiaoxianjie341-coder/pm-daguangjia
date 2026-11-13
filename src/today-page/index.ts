@@ -185,13 +185,7 @@ export function reopenRiskCard(
   db: DatabaseSync,
   input: { riskCardId: string },
 ): void {
-  ensureTodayPageSchema(db);
-  const result = db
-    .prepare(`UPDATE risk_cards SET hidden = 0, resolved = 0 WHERE id = ?`)
-    .run(input.riskCardId);
-  if (result.changes !== 1) {
-    throw new Error("风险卡不存在");
-  }
+  returnRiskCardToToday(db, input.riskCardId);
 }
 
 export function resolveRiskCard(
@@ -211,10 +205,14 @@ export function restoreRiskCard(
   db: DatabaseSync,
   input: { riskCardId: string },
 ): void {
+  returnRiskCardToToday(db, input.riskCardId);
+}
+
+function returnRiskCardToToday(db: DatabaseSync, riskCardId: string): void {
   ensureTodayPageSchema(db);
   const result = db
     .prepare(`UPDATE risk_cards SET hidden = 0, resolved = 0 WHERE id = ?`)
-    .run(input.riskCardId);
+    .run(riskCardId);
   if (result.changes !== 1) {
     throw new Error("风险卡不存在");
   }
@@ -352,7 +350,7 @@ export function createRiskCard(
       ).run(
         randomUUID(),
         id,
-        openingNodeContent({ owner, deadline, source }),
+        keyNodeFactSentence({ owner, deadline, source }),
         date,
         owner,
         deadline,
@@ -367,7 +365,7 @@ export function createRiskCard(
   return { id };
 }
 
-function openingNodeContent(input: {
+export function keyNodeFactSentence(input: {
   owner: string | null;
   deadline: string | null;
   source: string | null;
@@ -409,6 +407,9 @@ export type AddKeyNodeInput = {
   content: string;
   link?: string;
   date?: string;
+  owner?: string;
+  deadline?: string;
+  source?: string;
 };
 
 export function addKeyNode(
@@ -422,13 +423,16 @@ export function addKeyNode(
   db.prepare(
     `INSERT INTO key_nodes (
        id, risk_card_id, content, node_date, link, owner, deadline, source
-     ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.riskCardId,
     content,
     displayDate(input.date),
     optionalText(input.link),
+    optionalText(input.owner),
+    optionalText(input.deadline),
+    optionalText(input.source),
   );
   return { id };
 }
