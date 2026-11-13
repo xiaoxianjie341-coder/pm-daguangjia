@@ -9,10 +9,16 @@ export type Project = {
   name: string;
 };
 
+export type ConsumptionBar = {
+  readonly consumed: number;
+  readonly planned: number;
+};
+
 export type RiskCard = {
   id: string;
   title: string;
   description: string | null;
+  consumptionBar: ConsumptionBar | null;
 };
 
 export type KeyNode = {
@@ -71,6 +77,49 @@ export function openTodayPage(
     selectedRiskCardId,
     keyNodes: readKeyNodes(db, selectedRiskCardId, date),
   };
+}
+
+type RiskCardRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  consumed: number | null;
+  planned: number | null;
+};
+
+function readRiskCards(
+  db: DatabaseSync,
+  projectId: string,
+  list: TodayList,
+): RiskCard[] {
+  const stateClause =
+    list === "hidden"
+      ? "hidden = 1 AND resolved = 0"
+      : list === "resolved"
+        ? "resolved = 1"
+        : "hidden = 0 AND resolved = 0";
+  const rows = db
+    .prepare(
+      `SELECT id, title, description, consumed, planned
+       FROM risk_cards
+       WHERE project_id = ? AND ${stateClause}
+       ORDER BY rowid ASC`,
+    )
+    .all(projectId) as RiskCardRow[];
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    consumptionBar: consumptionBar(row.consumed, row.planned),
+  }));
+}
+
+function consumptionBar(
+  consumed: number | null,
+  planned: number | null,
+): ConsumptionBar | null {
+  if (consumed == null || planned == null) return null;
+  return { consumed, planned };
 }
 
 export function deleteRiskCard(
@@ -150,27 +199,6 @@ export function hideRiskCard(
   if (result.changes !== 1) {
     throw new Error("风险卡不存在");
   }
-}
-
-function readRiskCards(
-  db: DatabaseSync,
-  projectId: string,
-  list: TodayList,
-): RiskCard[] {
-  const stateClause =
-    list === "hidden"
-      ? "hidden = 1 AND resolved = 0"
-      : list === "resolved"
-        ? "resolved = 1"
-        : "hidden = 0 AND resolved = 0";
-  return db
-    .prepare(
-      `SELECT id, title, description
-       FROM risk_cards
-       WHERE project_id = ? AND ${stateClause}
-       ORDER BY rowid ASC`,
-    )
-    .all(projectId) as RiskCard[];
 }
 
 type KeyNodeRow = {
@@ -422,7 +450,9 @@ export function ensureTodayPageSchema(db: DatabaseSync): void {
       hidden INTEGER NOT NULL DEFAULT 0,
       resolved INTEGER NOT NULL DEFAULT 0,
       created_on TEXT NOT NULL,
-      description TEXT
+      description TEXT,
+      consumed REAL,
+      planned REAL
     );
     CREATE TABLE IF NOT EXISTS key_nodes (
       id TEXT PRIMARY KEY,
@@ -436,6 +466,8 @@ export function ensureTodayPageSchema(db: DatabaseSync): void {
     );
   `);
   ensureColumn(db, "risk_cards", "description", "TEXT");
+  ensureColumn(db, "risk_cards", "consumed", "REAL");
+  ensureColumn(db, "risk_cards", "planned", "REAL");
   ensureColumn(db, "key_nodes", "owner", "TEXT");
   ensureColumn(db, "key_nodes", "deadline", "TEXT");
   ensureColumn(db, "key_nodes", "source", "TEXT");

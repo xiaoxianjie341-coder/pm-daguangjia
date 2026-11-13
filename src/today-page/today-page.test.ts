@@ -19,7 +19,9 @@ import {
   resolveRiskCard,
   restoreRiskCard,
   updateRiskCard,
+  type OpenTodayPageInput,
 } from "./index.ts";
+import * as todayPage from "./index.ts";
 
 test("默认项目的今日一页是安克，没有风险卡时今日列表为空", () => {
   const db = new DatabaseSync(":memory:");
@@ -669,6 +671,124 @@ test("项目列表包含安克，打开另一项目只返回该项目的风险�
       other.riskCards.map((card) => card.title),
       ["夹具-另一项目的卡"],
     );
+  } finally {
+    db.close();
+  }
+});
+
+test("风险卡同时有已消耗和计划时，今日一页返回消耗条", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    insertFixtureRiskCard(db, {
+      title: "夹具-两数都有",
+      consumed: 3,
+      planned: 10,
+    });
+
+    const page = openTodayPage(db);
+
+    assert.deepEqual(
+      page.riskCards.map((card) => ({
+        title: card.title,
+        consumptionBar: card.consumptionBar,
+      })),
+      [
+        {
+          title: "夹具-两数都有",
+          consumptionBar: { consumed: 3, planned: 10 },
+        },
+      ],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("缺少已消耗或计划时没有消耗条，已消耗为 0 时仍有消耗条", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    insertFixtureRiskCard(db, {
+      title: "夹具-只有已消耗",
+      consumed: 5,
+    });
+    insertFixtureRiskCard(db, {
+      title: "夹具-只有计划",
+      planned: 12,
+    });
+    insertFixtureRiskCard(db, {
+      title: "夹具-两数都没有",
+    });
+    insertFixtureRiskCard(db, {
+      title: "夹具-已消耗为零",
+      consumed: 0,
+      planned: 6,
+    });
+
+    const page = openTodayPage(db);
+
+    assert.deepEqual(
+      page.riskCards.map((card) => ({
+        title: card.title,
+        consumptionBar: card.consumptionBar,
+      })),
+      [
+        { title: "夹具-只有已消耗", consumptionBar: null },
+        { title: "夹具-只有计划", consumptionBar: null },
+        { title: "夹具-两数都没有", consumptionBar: null },
+        {
+          title: "夹具-已消耗为零",
+          consumptionBar: { consumed: 0, planned: 6 },
+        },
+      ],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+type OpenTodayPagePlanField = Extract<
+  keyof OpenTodayPageInput,
+  "consumed" | "planned" | "consumptionBar"
+>;
+
+const openTodayPageAcceptsPlanAmount: OpenTodayPagePlanField extends never
+  ? false
+  : true = false;
+
+test("今日一页应用接口不提供修改计划额，读取不会改掉消耗条", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    insertFixtureRiskCard(db, {
+      title: "夹具-只读消耗条",
+      consumed: 4,
+      planned: 9,
+    });
+
+    const readConsumptionBar = () =>
+      openTodayPage(db).riskCards.map((card) => ({
+        title: card.title,
+        consumptionBar: card.consumptionBar,
+      }));
+    const expected = [
+      {
+        title: "夹具-只读消耗条",
+        consumptionBar: { consumed: 4, planned: 9 },
+      },
+    ];
+
+    assert.deepEqual(readConsumptionBar(), expected);
+    assert.deepEqual(readConsumptionBar(), expected);
+    assert.equal(openTodayPageAcceptsPlanAmount, false);
+
+    const operations = Object.entries(todayPage)
+      .filter((entry) => typeof entry[1] === "function")
+      .map(([name]) => name);
+    const planWriters = operations.filter(
+      (name) =>
+        /(update|set|change|edit|save|revise|configure|write)/i.test(name) &&
+        /(plan|consumption|消耗|计划)/i.test(name),
+    );
+    assert.deepEqual(planWriters, []);
   } finally {
     db.close();
   }

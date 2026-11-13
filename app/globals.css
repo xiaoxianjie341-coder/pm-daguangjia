@@ -243,6 +243,39 @@ body {
   box-shadow: inset 3px 0 0 #214e3c;
 }
 
+.risk-card-title {
+  margin: 0;
+}
+
+.consumption-bar {
+  margin-top: 0.55rem;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.consumption-bar-scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0;
+  font-size: 0.78rem;
+  color: #5e564c;
+  font-variant-numeric: tabular-nums;
+}
+
+.consumption-bar-track {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: #e6dccb;
+  overflow: hidden;
+}
+
+.consumption-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #214e3c;
+}
+
 .selected-title {
   margin: 0;
   font-size: 1.35rem;

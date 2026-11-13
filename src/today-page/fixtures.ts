@@ -39,14 +39,17 @@ export function insertFixtureRiskCard(
     hidden?: boolean;
     resolved?: boolean;
     createdOn?: string;
+    consumed?: number;
+    planned?: number;
   },
 ): { id: string } {
   ensureTodayPageSchema(db);
   const projectId = card.projectId ?? defaultProjectId(db);
   const id = randomUUID();
   db.prepare(
-    `INSERT INTO risk_cards (id, project_id, title, hidden, resolved, created_on)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO risk_cards (
+       id, project_id, title, hidden, resolved, created_on, consumed, planned
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     projectId,
@@ -54,6 +57,8 @@ export function insertFixtureRiskCard(
     card.hidden ? 1 : 0,
     card.resolved ? 1 : 0,
     card.createdOn ?? "2026-11-13",
+    card.consumed ?? null,
+    card.planned ?? null,
   );
   return { id };
 }
