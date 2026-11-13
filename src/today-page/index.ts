@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 const ANKER_PROJECT_ID = "anker";
@@ -11,6 +12,7 @@ export type Project = {
 export type RiskCard = {
   id: string;
   title: string;
+  description: string | null;
 };
 
 export type KeyNode = {
@@ -19,21 +21,28 @@ export type KeyNode = {
   date: string;
   link: string | null;
   marked: boolean;
+  owner: string | null;
+  deadline: string | null;
+  source: string | null;
 };
 
 export type TodayPage = {
   project: Project;
   date: string;
+  list: TodayList;
   projects: Project[];
   riskCards: RiskCard[];
   selectedRiskCardId: string | null;
   keyNodes: KeyNode[];
 };
 
+export type TodayList = "today" | "hidden" | "resolved";
+
 export type OpenTodayPageInput = {
   projectId?: string;
   date?: string;
   riskCardId?: string;
+  list?: TodayList;
 };
 
 export function openTodayPage(
@@ -45,15 +54,9 @@ export function openTodayPage(
     .prepare(`SELECT id, name FROM projects ORDER BY rowid ASC`)
     .all() as Project[];
   const project = resolveProject(projects, input.projectId);
-  // 日期不筛选今日列表。列表仍是该项目当前未隐藏、未解决的风险卡；日期只标出当天的关键节点。
-  const riskCards = db
-    .prepare(
-      `SELECT id, title
-       FROM risk_cards
-       WHERE project_id = ? AND hidden = 0 AND resolved = 0
-       ORDER BY rowid ASC`,
-    )
-    .all(project.id) as RiskCard[];
+  const list = input.list ?? "today";
+  // 日期不筛选列表，只标出当天的关键节点。list 决定读今日、已隐藏还是已解决。
+  const riskCards = readRiskCards(db, project.id, list);
   const selectedRiskCardId = resolveSelectedRiskCardId(
     riskCards,
     input.riskCardId,
@@ -62,6 +65,7 @@ export function openTodayPage(
   return {
     project,
     date,
+    list,
     projects,
     riskCards,
     selectedRiskCardId,
@@ -69,11 +73,35 @@ export function openTodayPage(
   };
 }
 
+function readRiskCards(
+  db: DatabaseSync,
+  projectId: string,
+  list: TodayList,
+): RiskCard[] {
+  const stateClause =
+    list === "hidden"
+      ? "hidden = 1 AND resolved = 0"
+      : list === "resolved"
+        ? "resolved = 1"
+        : "hidden = 0 AND resolved = 0";
+  return db
+    .prepare(
+      `SELECT id, title, description
+       FROM risk_cards
+       WHERE project_id = ? AND ${stateClause}
+       ORDER BY rowid ASC`,
+    )
+    .all(projectId) as RiskCard[];
+}
+
 type KeyNodeRow = {
   id: string;
   content: string;
   node_date: string;
   link: string | null;
+  owner: string | null;
+  deadline: string | null;
+  source: string | null;
 };
 
 function readKeyNodes(
@@ -84,7 +112,7 @@ function readKeyNodes(
   if (!riskCardId) return [];
   const rows = db
     .prepare(
-      `SELECT id, content, node_date, link
+      `SELECT id, content, node_date, link, owner, deadline, source
        FROM key_nodes
        WHERE risk_card_id = ?
        ORDER BY rowid ASC`,
@@ -96,6 +124,9 @@ function readKeyNodes(
     date: row.node_date,
     link: row.link ? row.link : null,
     marked: row.node_date === date,
+    owner: row.owner ? row.owner : null,
+    deadline: row.deadline ? row.deadline : null,
+    source: row.source ? row.source : null,
   }));
 }
 
@@ -139,6 +170,166 @@ function displayDate(date: string | undefined): string {
   }).format(new Date());
 }
 
+export type CreateRiskCardInput = {
+  projectId: string;
+  title: string;
+  description?: string;
+  owner?: string;
+  deadline?: string;
+  source?: string;
+  date?: string;
+};
+
+export function createRiskCard(
+  db: DatabaseSync,
+  input: CreateRiskCardInput,
+): { id: string } {
+  ensureTodayPageSchema(db);
+  const title = requiredTitle(input.title);
+  const project = db
+    .prepare(`SELECT id FROM projects WHERE id = ?`)
+    .get(input.projectId) as { id: string } | undefined;
+  if (!project) {
+    throw new Error(`项目不存在: ${input.projectId}`);
+  }
+  const description = optionalText(input.description);
+  const owner = optionalText(input.owner);
+  const deadline = optionalText(input.deadline);
+  const source = optionalText(input.source);
+  const date = displayDate(input.date);
+  const id = randomUUID();
+  db.exec("BEGIN");
+  try {
+    db.prepare(
+      `INSERT INTO risk_cards (
+         id, project_id, title, hidden, resolved, created_on, description
+       ) VALUES (?, ?, ?, 0, 0, ?, ?)`,
+    ).run(id, input.projectId, title, date, description);
+    if (owner || deadline || source) {
+      db.prepare(
+        `INSERT INTO key_nodes (
+           id, risk_card_id, content, node_date, link, owner, deadline, source
+         ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+      ).run(
+        randomUUID(),
+        id,
+        openingNodeContent({ owner, deadline, source }),
+        date,
+        owner,
+        deadline,
+        source,
+      );
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return { id };
+}
+
+function openingNodeContent(input: {
+  owner: string | null;
+  deadline: string | null;
+  source: string | null;
+}): string {
+  const parts: string[] = [];
+  if (input.owner) parts.push(`负责人：${input.owner}`);
+  if (input.deadline) parts.push(`截止时间：${input.deadline}`);
+  if (input.source) parts.push(`来源：${input.source}`);
+  return parts.join("；");
+}
+
+export type UpdateRiskCardInput = {
+  riskCardId: string;
+  title: string;
+  description?: string;
+};
+
+export function updateRiskCard(
+  db: DatabaseSync,
+  input: UpdateRiskCardInput,
+): void {
+  ensureTodayPageSchema(db);
+  assertRiskCardMutable(db, input.riskCardId);
+  const title = requiredTitle(input.title);
+  if (input.description === undefined) {
+    db.prepare(`UPDATE risk_cards SET title = ? WHERE id = ?`).run(
+      title,
+      input.riskCardId,
+    );
+    return;
+  }
+  db.prepare(
+    `UPDATE risk_cards SET title = ?, description = ? WHERE id = ?`,
+  ).run(title, optionalText(input.description), input.riskCardId);
+}
+
+export type AddKeyNodeInput = {
+  riskCardId: string;
+  content: string;
+  link?: string;
+  date?: string;
+};
+
+export function addKeyNode(
+  db: DatabaseSync,
+  input: AddKeyNodeInput,
+): { id: string } {
+  ensureTodayPageSchema(db);
+  assertRiskCardMutable(db, input.riskCardId);
+  const content = requiredNodeContent(input.content);
+  const id = randomUUID();
+  db.prepare(
+    `INSERT INTO key_nodes (
+       id, risk_card_id, content, node_date, link, owner, deadline, source
+     ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)`,
+  ).run(
+    id,
+    input.riskCardId,
+    content,
+    displayDate(input.date),
+    optionalText(input.link),
+  );
+  return { id };
+}
+
+function assertRiskCardMutable(db: DatabaseSync, riskCardId: string): void {
+  const card = db
+    .prepare(`SELECT id, hidden, resolved FROM risk_cards WHERE id = ?`)
+    .get(riskCardId) as
+    | { id: string; hidden: number; resolved: number }
+    | undefined;
+  if (!card) {
+    throw new Error("风险卡不存在");
+  }
+  if (card.hidden || card.resolved) {
+    throw new Error("已隐藏或已解决的风险卡不能修改");
+  }
+}
+
+function requiredNodeContent(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    throw new Error("关键节点内容不能为空");
+  }
+  return trimmed;
+}
+
+function requiredTitle(title: string): string {
+  const trimmed = title.trim();
+  if (!trimmed) {
+    throw new Error("标题不能为空");
+  }
+  return trimmed;
+}
+
+function optionalText(value: string | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export function ensureTodayPageSchema(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
@@ -151,17 +342,41 @@ export function ensureTodayPageSchema(db: DatabaseSync): void {
       title TEXT NOT NULL,
       hidden INTEGER NOT NULL DEFAULT 0,
       resolved INTEGER NOT NULL DEFAULT 0,
-      created_on TEXT NOT NULL
+      created_on TEXT NOT NULL,
+      description TEXT
     );
     CREATE TABLE IF NOT EXISTS key_nodes (
       id TEXT PRIMARY KEY,
       risk_card_id TEXT NOT NULL,
       content TEXT NOT NULL,
       node_date TEXT NOT NULL,
-      link TEXT
+      link TEXT,
+      owner TEXT,
+      deadline TEXT,
+      source TEXT
     );
   `);
+  ensureColumn(db, "risk_cards", "description", "TEXT");
+  ensureColumn(db, "key_nodes", "owner", "TEXT");
+  ensureColumn(db, "key_nodes", "deadline", "TEXT");
+  ensureColumn(db, "key_nodes", "source", "TEXT");
   db.prepare(
     `INSERT INTO projects (id, name) VALUES (?, ?) ON CONFLICT(id) DO NOTHING`,
   ).run(ANKER_PROJECT_ID, ANKER_PROJECT_NAME);
+}
+
+function ensureColumn(
+  db: DatabaseSync,
+  table: "risk_cards" | "key_nodes",
+  column: string,
+  definition: string,
+): void {
+  const columns = new Set(
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
+      (item) => item.name,
+    ),
+  );
+  if (!columns.has(column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }

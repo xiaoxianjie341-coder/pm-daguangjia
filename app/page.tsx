@@ -1,4 +1,9 @@
-import { openTodayPage } from "../src/today-page";
+import { openTodayPage, type KeyNode } from "../src/today-page";
+import {
+  addKeyNodeAction,
+  createRiskCardAction,
+  updateRiskCardAction,
+} from "../src/today-page/actions";
 import { withTodayPageDatabase } from "../src/today-page/production";
 
 export const runtime = "nodejs";
@@ -87,12 +92,41 @@ export default async function TodayPage({
               })}
             </ol>
           )}
+          <form className="editor" action={createRiskCardAction}>
+            <h3>新增风险卡</h3>
+            <input type="hidden" name="projectId" value={page.project.id} />
+            <input type="hidden" name="date" value={page.date} />
+            <label>
+              标题
+              <input name="title" required />
+            </label>
+            <label>
+              说明
+              <textarea name="description" rows={2} />
+            </label>
+            <label>
+              负责人
+              <input name="owner" />
+            </label>
+            <label>
+              截止时间
+              <input name="deadline" type="date" />
+            </label>
+            <label>
+              来源
+              <input name="source" />
+            </label>
+            <button type="submit">新增风险卡</button>
+          </form>
         </section>
         <section className="detail-pane" aria-labelledby="nodes-heading">
           <h2 id="nodes-heading">关键节点</h2>
           {selected ? (
             <>
               <p className="selected-title">{selected.title}</p>
+              {selected.description ? (
+                <p className="selected-description">{selected.description}</p>
+              ) : null}
               {page.keyNodes.length === 0 ? (
                 <p className="empty">当前没有关键节点</p>
               ) : (
@@ -108,17 +142,68 @@ export default async function TodayPage({
                           <span className="key-node-mark">当天</span>
                         ) : null}
                       </div>
-                      {node.link ? (
-                        <a className="key-node-link" href={node.link}>
-                          {node.content}
-                        </a>
-                      ) : (
-                        <p className="key-node-content">{node.content}</p>
-                      )}
+                      {node.owner || node.deadline || node.source ? (
+                        <dl className="key-node-facts">
+                          {node.owner ? (
+                            <div>
+                              <dt>负责人</dt>
+                              <dd>{node.owner}</dd>
+                            </div>
+                          ) : null}
+                          {node.deadline ? (
+                            <div>
+                              <dt>截止时间</dt>
+                              <dd>{node.deadline}</dd>
+                            </div>
+                          ) : null}
+                          {node.source ? (
+                            <div>
+                              <dt>来源</dt>
+                              <dd>{node.source}</dd>
+                            </div>
+                          ) : null}
+                        </dl>
+                      ) : null}
+                      {nodeBody(node)}
                     </li>
                   ))}
                 </ol>
               )}
+              <form className="editor" action={updateRiskCardAction}>
+                <h3>编辑标题和说明</h3>
+                <input type="hidden" name="projectId" value={page.project.id} />
+                <input type="hidden" name="date" value={page.date} />
+                <input type="hidden" name="riskCardId" value={selected.id} />
+                <label>
+                  标题
+                  <input name="title" required defaultValue={selected.title} />
+                </label>
+                <label>
+                  说明
+                  <textarea
+                    name="description"
+                    rows={3}
+                    defaultValue={selected.description ?? ""}
+                  />
+                </label>
+                <button type="submit">保存标题和说明</button>
+              </form>
+              <form className="editor" action={addKeyNodeAction}>
+                <h3>新增关键节点</h3>
+                <input type="hidden" name="projectId" value={page.project.id} />
+                <input type="hidden" name="date" value={page.date} />
+                <input type="hidden" name="riskCardId" value={selected.id} />
+                <p className="editor-note">记在 {page.date}</p>
+                <label>
+                  内容
+                  <textarea name="content" required rows={3} />
+                </label>
+                <label>
+                  链接
+                  <input name="link" type="url" />
+                </label>
+                <button type="submit">新增关键节点</button>
+              </form>
             </>
           ) : (
             <p className="empty">未选中风险卡</p>
@@ -127,6 +212,26 @@ export default async function TodayPage({
       </div>
     </main>
   );
+}
+
+function nodeBody(node: KeyNode) {
+  if (nodeContentRepeatsFacts(node)) return null;
+  if (node.link) {
+    return (
+      <a className="key-node-link" href={node.link}>
+        {node.content}
+      </a>
+    );
+  }
+  return <p className="key-node-content">{node.content}</p>;
+}
+
+function nodeContentRepeatsFacts(node: KeyNode): boolean {
+  const parts: string[] = [];
+  if (node.owner) parts.push(`负责人：${node.owner}`);
+  if (node.deadline) parts.push(`截止时间：${node.deadline}`);
+  if (node.source) parts.push(`来源：${node.source}`);
+  return parts.length > 0 && node.content === parts.join("；");
 }
 
 function todayPageHref(input: {

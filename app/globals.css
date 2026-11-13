@@ -139,6 +139,12 @@ body {
   line-height: 1.4;
 }
 
+.selected-description {
+  margin: 0.45rem 0 0;
+  color: #3d3832;
+  line-height: 1.5;
+}
+
 .key-nodes {
   list-style: none;
   margin: 1rem 0 0;
@@ -175,8 +181,28 @@ body {
   font-weight: 650;
 }
 
-.key-node-content {
+.key-node-facts {
+  display: grid;
+  gap: 0.25rem;
   margin: 0;
+}
+
+.key-node-facts div {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.key-node-facts dt {
+  margin: 0;
+  color: #5e564c;
+}
+
+.key-node-facts dd {
+  margin: 0;
+}
+
+.key-node-content {
+  margin: 0.35rem 0 0;
   line-height: 1.45;
 }
 
@@ -188,6 +214,56 @@ body {
 .empty {
   margin: 0;
   color: #6d645a;
+}
+
+.editor {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1.15rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e4dacb;
+}
+
+.editor h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.editor label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: #5e564c;
+}
+
+.editor input,
+.editor textarea,
+.editor button {
+  font: inherit;
+  color: #241f1a;
+  background: #fff;
+  border: 1px solid #c9beae;
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.6rem;
+}
+
+.editor textarea {
+  resize: vertical;
+}
+
+.editor button {
+  justify-self: start;
+  background: #214e3c;
+  color: #f7f3eb;
+  border-color: #214e3c;
+  cursor: pointer;
+}
+
+.editor-note {
+  margin: 0;
+  color: #5e564c;
+  font-size: 0.85rem;
 }
 
 @media (max-width: 720px) {
