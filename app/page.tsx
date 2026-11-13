@@ -68,7 +68,31 @@ export default async function TodayPage({
                     className={isSelected ? "risk-card is-selected" : "risk-card"}
                     aria-current={isSelected ? "true" : undefined}
                   >
-                    {card.title}
+                    <p className="risk-card-title">{card.title}</p>
+                    {card.consumptionBar ? (
+                      <div
+                        className="consumption-bar"
+                        role="meter"
+                        aria-label="消耗条"
+                        aria-valuemin={0}
+                        aria-valuemax={card.consumptionBar.planned}
+                        aria-valuenow={card.consumptionBar.consumed}
+                        aria-valuetext={`已消耗 ${card.consumptionBar.consumed}，计划 ${card.consumptionBar.planned}`}
+                      >
+                        <p className="consumption-bar-scale">
+                          <span>已消耗 {card.consumptionBar.consumed}</span>
+                          <span>计划 {card.consumptionBar.planned}</span>
+                        </p>
+                        <div className="consumption-bar-track">
+                          <div
+                            className="consumption-bar-fill"
+                            style={{
+                              width: `${consumptionFillPercent(card.consumptionBar)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
                   </li>
                 );
               })}
@@ -86,6 +110,17 @@ export default async function TodayPage({
       </div>
     </main>
   );
+}
+
+function consumptionFillPercent(bar: {
+  consumed: number;
+  planned: number;
+}): number {
+  if (bar.planned <= 0) return 0;
+  const ratio = (bar.consumed / bar.planned) * 100;
+  if (ratio < 0) return 0;
+  if (ratio > 100) return 100;
+  return ratio;
 }
 
 function firstQueryValue(value: string | string[] | undefined): string | undefined {

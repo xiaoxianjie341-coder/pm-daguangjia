@@ -130,6 +130,34 @@ test("项目列表包含安克，打开另一项目只返回该项目的风险�
   }
 });
 
+test("风险卡同时有已消耗和计划时，今日一页返回消耗条", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    insertFixtureRiskCard(db, {
+      title: "夹具-两数都有",
+      consumed: 3,
+      planned: 10,
+    });
+
+    const page = openTodayPage(db);
+
+    assert.deepEqual(
+      page.riskCards.map((card) => ({
+        title: card.title,
+        consumptionBar: card.consumptionBar,
+      })),
+      [
+        {
+          title: "夹具-两数都有",
+          consumptionBar: { consumed: 3, planned: 10 },
+        },
+      ],
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test("写入 SQLite 文件后，新连接打开同一文件仍能读到风险卡", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "today-page-"));
   const file = path.join(dir, "pm.sqlite");
