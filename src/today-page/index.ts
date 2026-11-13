@@ -21,9 +21,12 @@ export type KeyNode = {
   marked: boolean;
 };
 
+export type TodayList = "today" | "hidden" | "resolved";
+
 export type TodayPage = {
   project: Project;
   date: string;
+  list: TodayList;
   projects: Project[];
   riskCards: RiskCard[];
   selectedRiskCardId: string | null;
@@ -34,6 +37,7 @@ export type OpenTodayPageInput = {
   projectId?: string;
   date?: string;
   riskCardId?: string;
+  list?: TodayList;
 };
 
 export function openTodayPage(
@@ -45,12 +49,13 @@ export function openTodayPage(
     .prepare(`SELECT id, name FROM projects ORDER BY rowid ASC`)
     .all() as Project[];
   const project = resolveProject(projects, input.projectId);
-  // 日期不筛选今日列表。列表仍是该项目当前未隐藏、未解决的风险卡；日期只标出当天的关键节点。
+  const list = input.list ?? "today";
+  // 日期不筛选列表。日期只标出当天的关键节点。
   const riskCards = db
     .prepare(
       `SELECT id, title
        FROM risk_cards
-       WHERE project_id = ? AND hidden = 0 AND resolved = 0
+       WHERE project_id = ? AND ${listWhere(list)}
        ORDER BY rowid ASC`,
     )
     .all(project.id) as RiskCard[];
@@ -62,11 +67,97 @@ export function openTodayPage(
   return {
     project,
     date,
+    list,
     projects,
     riskCards,
     selectedRiskCardId,
     keyNodes: readKeyNodes(db, selectedRiskCardId, date),
   };
+}
+
+export function deleteRiskCard(
+  db: DatabaseSync,
+  input: { riskCardId: string; confirmed: boolean },
+): void {
+  if (input.confirmed !== true) {
+    throw new Error("删除风险卡需要确认");
+  }
+  ensureTodayPageSchema(db);
+  const existing = db
+    .prepare(`SELECT id FROM risk_cards WHERE id = ?`)
+    .get(input.riskCardId) as { id: string } | undefined;
+  if (!existing) {
+    throw new Error("风险卡不存在");
+  }
+  db.exec("BEGIN");
+  try {
+    db.prepare(`DELETE FROM key_nodes WHERE risk_card_id = ?`).run(
+      input.riskCardId,
+    );
+    db.prepare(`DELETE FROM risk_cards WHERE id = ?`).run(input.riskCardId);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function reopenRiskCard(
+  db: DatabaseSync,
+  input: { riskCardId: string },
+): void {
+  ensureTodayPageSchema(db);
+  const result = db
+    .prepare(`UPDATE risk_cards SET hidden = 0, resolved = 0 WHERE id = ?`)
+    .run(input.riskCardId);
+  if (result.changes !== 1) {
+    throw new Error("风险卡不存在");
+  }
+}
+
+export function resolveRiskCard(
+  db: DatabaseSync,
+  input: { riskCardId: string },
+): void {
+  ensureTodayPageSchema(db);
+  const result = db
+    .prepare(`UPDATE risk_cards SET resolved = 1 WHERE id = ?`)
+    .run(input.riskCardId);
+  if (result.changes !== 1) {
+    throw new Error("风险卡不存在");
+  }
+}
+
+export function restoreRiskCard(
+  db: DatabaseSync,
+  input: { riskCardId: string },
+): void {
+  ensureTodayPageSchema(db);
+  const result = db
+    .prepare(`UPDATE risk_cards SET hidden = 0, resolved = 0 WHERE id = ?`)
+    .run(input.riskCardId);
+  if (result.changes !== 1) {
+    throw new Error("风险卡不存在");
+  }
+}
+
+export function hideRiskCard(
+  db: DatabaseSync,
+  input: { riskCardId: string },
+): void {
+  ensureTodayPageSchema(db);
+  const result = db
+    .prepare(`UPDATE risk_cards SET hidden = 1 WHERE id = ?`)
+    .run(input.riskCardId);
+  if (result.changes !== 1) {
+    throw new Error("风险卡不存在");
+  }
+}
+
+function listWhere(list: TodayList): string {
+  if (list === "hidden") return "hidden = 1 AND resolved = 0";
+  if (list === "resolved") return "resolved = 1";
+  return "hidden = 0 AND resolved = 0";
 }
 
 type KeyNodeRow = {
