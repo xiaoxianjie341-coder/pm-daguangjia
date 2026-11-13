@@ -6,6 +6,7 @@ import {
   restoreRiskCardAction,
 } from "./card-actions";
 import {
+  keyNodeFactSentence,
   openTodayPage,
   type KeyNode,
   type TodayList,
@@ -16,6 +17,7 @@ import {
   updateRiskCardAction,
 } from "../src/today-page/actions";
 import { withTodayPageDatabase } from "../src/today-page/production";
+import { parseTodayList, todayPageHref } from "../src/today-page/request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +41,8 @@ const emptyListCopy: Record<TodayList, string> = {
   resolved: "已解决里没有风险卡",
 };
 
+const editRiskCardFormId = "edit-risk-card";
+
 export default async function TodayPage({
   searchParams,
 }: {
@@ -50,7 +54,7 @@ export default async function TodayPage({
       projectId: firstQueryValue(query.project),
       date: firstQueryValue(query.date),
       riskCardId: firstQueryValue(query.card),
-      list: parseList(firstQueryValue(query.list)),
+      list: parseTodayList(firstQueryValue(query.list)),
     }),
   );
   const selected =
@@ -266,7 +270,11 @@ export default async function TodayPage({
               )}
               {page.list === "today" ? (
                 <>
-                  <form className="editor" action={updateRiskCardAction}>
+                  <form
+                    id={editRiskCardFormId}
+                    className="editor"
+                    action={updateRiskCardAction}
+                  >
                     <h3>编辑标题和说明</h3>
                     <input type="hidden" name="projectId" value={page.project.id} />
                     <input type="hidden" name="date" value={page.date} />
@@ -298,6 +306,18 @@ export default async function TodayPage({
                     <label>
                       链接
                       <input name="link" type="url" />
+                    </label>
+                    <label>
+                      负责人
+                      <input name="owner" />
+                    </label>
+                    <label>
+                      截止时间
+                      <input name="deadline" type="date" />
+                    </label>
+                    <label>
+                      来源
+                      <input name="source" />
                     </label>
                     <button type="submit">新增关键节点</button>
                   </form>
@@ -377,9 +397,17 @@ function CardActions({
   }
   return (
     <>
-      <button type="button" className="card-action">
+      <a
+        className="card-action"
+        href={`${todayPageHref({
+          projectId,
+          date,
+          list,
+          riskCardId,
+        })}#${editRiskCardFormId}`}
+      >
         改
-      </button>
+      </a>
       <DeleteRiskCardControl
         riskCardId={riskCardId}
         projectId={projectId}
@@ -487,32 +515,8 @@ function nodeBody(node: KeyNode) {
 }
 
 function nodeContentRepeatsFacts(node: KeyNode): boolean {
-  const parts: string[] = [];
-  if (node.owner) parts.push(`负责人：${node.owner}`);
-  if (node.deadline) parts.push(`截止时间：${node.deadline}`);
-  if (node.source) parts.push(`来源：${node.source}`);
-  return parts.length > 0 && node.content === parts.join("；");
-}
-
-function todayPageHref(input: {
-  projectId: string;
-  date: string;
-  list: TodayList;
-  riskCardId?: string | null;
-}): string {
-  const params = new URLSearchParams();
-  params.set("project", input.projectId);
-  params.set("date", input.date);
-  params.set("list", input.list);
-  if (input.riskCardId) params.set("card", input.riskCardId);
-  return `/?${params.toString()}`;
-}
-
-function parseList(value: string | undefined): TodayList | undefined {
-  if (value === "today" || value === "hidden" || value === "resolved") {
-    return value;
-  }
-  return undefined;
+  const facts = keyNodeFactSentence(node);
+  return facts.length > 0 && node.content === facts;
 }
 
 function firstQueryValue(value: string | string[] | undefined): string | undefined {
