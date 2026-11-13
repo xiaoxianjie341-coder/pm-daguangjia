@@ -9,7 +9,14 @@ import {
   insertFixtureProject,
   insertFixtureRiskCard,
 } from "./fixtures.ts";
-import { openTodayPage } from "./index.ts";
+import {
+  deleteRiskCard,
+  hideRiskCard,
+  openTodayPage,
+  reopenRiskCard,
+  resolveRiskCard,
+  restoreRiskCard,
+} from "./index.ts";
 
 test("默认项目的今日一页是安克，没有风险卡时今日列表为空", () => {
   const db = new DatabaseSync(":memory:");
@@ -19,6 +26,384 @@ test("默认项目的今日一页是安克，没有风险卡时今日列表为�
     assert.equal(page.project.name, "安克 · A30 睡眠耳机");
     assert.deepEqual(
       page.riskCards.map((card) => card.title),
+      [],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("已隐藏列表只列出已隐藏且未解决的风险卡", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    insertFixtureRiskCard(db, {
+      title: "夹具-跟进中",
+      hidden: false,
+      resolved: false,
+    });
+    insertFixtureRiskCard(db, {
+      title: "夹具-已隐藏",
+      hidden: true,
+      resolved: false,
+    });
+    insertFixtureRiskCard(db, {
+      title: "夹具-已解决",
+      hidden: false,
+      resolved: true,
+    });
+    insertFixtureRiskCard(db, {
+      title: "夹具-隐藏后又解决",
+      hidden: true,
+      resolved: true,
+    });
+
+    const page = openTodayPage(db, { list: "hidden" });
+
+    assert.equal(page.list, "hidden");
+    assert.deepEqual(
+      page.riskCards.map((card) => card.title),
+      ["夹具-已隐藏"],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("已解决列表列出已解决的风险卡", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    insertFixtureRiskCard(db, {
+      title: "夹具-跟进中",
+      hidden: false,
+      resolved: false,
+    });
+    insertFixtureRiskCard(db, {
+      title: "夹具-已隐藏",
+      hidden: true,
+      resolved: false,
+    });
+    insertFixtureRiskCard(db, {
+      title: "夹具-已解决",
+      hidden: false,
+      resolved: true,
+    });
+    insertFixtureRiskCard(db, {
+      title: "夹具-隐藏后又解决",
+      hidden: true,
+      resolved: true,
+    });
+
+    const page = openTodayPage(db, { list: "resolved" });
+
+    assert.equal(page.list, "resolved");
+    assert.deepEqual(
+      page.riskCards.map((card) => card.title),
+      ["夹具-已解决", "夹具-隐藏后又解决"],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("进入已隐藏列表时选中该列表第一张风险卡，并带回它的关键节点", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const todayCard = insertFixtureRiskCard(db, { title: "夹具-今日卡" });
+    const firstHidden = insertFixtureRiskCard(db, {
+      title: "夹具-先隐藏",
+      hidden: true,
+    });
+    insertFixtureKeyNode(db, {
+      riskCardId: firstHidden.id,
+      content: "夹具-隐藏卡上的节点",
+      date: "2026-11-02",
+    });
+    insertFixtureRiskCard(db, { title: "夹具-后隐藏", hidden: true });
+
+    const page = openTodayPage(db, {
+      list: "hidden",
+      riskCardId: todayCard.id,
+    });
+
+    assert.deepEqual(
+      page.riskCards.map((card) => card.title),
+      ["夹具-先隐藏", "夹具-后隐藏"],
+    );
+    assert.equal(page.selectedRiskCardId, firstHidden.id);
+    assert.deepEqual(
+      page.keyNodes.map((node) => node.content),
+      ["夹具-隐藏卡上的节点"],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("进入已解决列表时选中该列表第一张风险卡", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    insertFixtureRiskCard(db, { title: "夹具-今日卡" });
+    const firstResolved = insertFixtureRiskCard(db, {
+      title: "夹具-先解决",
+      resolved: true,
+    });
+    insertFixtureRiskCard(db, { title: "夹具-后解决", resolved: true });
+
+    const page = openTodayPage(db, {
+      list: "resolved",
+      riskCardId: "不属于这个列表",
+    });
+
+    assert.deepEqual(
+      page.riskCards.map((card) => card.title),
+      ["夹具-先解决", "夹具-后解决"],
+    );
+    assert.equal(page.selectedRiskCardId, firstResolved.id);
+  } finally {
+    db.close();
+  }
+});
+
+test("切换日期不改变已隐藏和已解决列表里的风险卡", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const hidden = insertFixtureRiskCard(db, {
+      title: "夹具-一月就隐藏",
+      hidden: true,
+      createdOn: "2026-01-04",
+    });
+    const resolved = insertFixtureRiskCard(db, {
+      title: "夹具-十一月才解决",
+      resolved: true,
+      createdOn: "2026-11-02",
+    });
+
+    const hiddenOnNovember = openTodayPage(db, {
+      list: "hidden",
+      date: "2026-11-13",
+    });
+    const hiddenOnOctober = openTodayPage(db, {
+      list: "hidden",
+      date: "2026-10-01",
+    });
+    const resolvedOnNovember = openTodayPage(db, {
+      list: "resolved",
+      date: "2026-11-13",
+    });
+    const resolvedOnOctober = openTodayPage(db, {
+      list: "resolved",
+      date: "2026-10-01",
+    });
+
+    assert.deepEqual(
+      hiddenOnNovember.riskCards.map((card) => card.id),
+      [hidden.id],
+    );
+    assert.deepEqual(
+      hiddenOnOctober.riskCards.map((card) => card.id),
+      [hidden.id],
+    );
+    assert.deepEqual(
+      resolvedOnNovember.riskCards.map((card) => card.id),
+      [resolved.id],
+    );
+    assert.deepEqual(
+      resolvedOnOctober.riskCards.map((card) => card.id),
+      [resolved.id],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("隐藏风险卡后它离开今日列表，能在已隐藏里连同关键节点读到", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const stay = insertFixtureRiskCard(db, { title: "夹具-仍在今日" });
+    const card = insertFixtureRiskCard(db, { title: "夹具-准备隐藏" });
+    insertFixtureKeyNode(db, {
+      riskCardId: card.id,
+      content: "夹具-隐藏前记下的节点",
+      date: "2026-11-13",
+    });
+
+    hideRiskCard(db, { riskCardId: card.id });
+
+    const today = openTodayPage(db, { date: "2026-11-13" });
+    const hidden = openTodayPage(db, { list: "hidden", date: "2026-11-13" });
+
+    assert.deepEqual(
+      today.riskCards.map((item) => item.title),
+      ["夹具-仍在今日"],
+    );
+    assert.equal(today.selectedRiskCardId, stay.id);
+    assert.deepEqual(
+      hidden.riskCards.map((item) => item.title),
+      ["夹具-准备隐藏"],
+    );
+    assert.equal(hidden.selectedRiskCardId, card.id);
+    assert.deepEqual(
+      hidden.keyNodes.map((node) => node.content),
+      ["夹具-隐藏前记下的节点"],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("恢复风险卡后它回到今日列表，已隐藏里不再有它", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const card = insertFixtureRiskCard(db, { title: "夹具-准备恢复" });
+    hideRiskCard(db, { riskCardId: card.id });
+
+    restoreRiskCard(db, { riskCardId: card.id });
+
+    const today = openTodayPage(db);
+    const hidden = openTodayPage(db, { list: "hidden" });
+
+    assert.deepEqual(
+      today.riskCards.map((item) => item.title),
+      ["夹具-准备恢复"],
+    );
+    assert.equal(today.selectedRiskCardId, card.id);
+    assert.deepEqual(
+      hidden.riskCards.map((item) => item.title),
+      [],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("解决风险卡后它离开今日列表，能在已解决里连同关键节点读到", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const stay = insertFixtureRiskCard(db, { title: "夹具-仍在今日" });
+    const card = insertFixtureRiskCard(db, { title: "夹具-准备解决" });
+    insertFixtureKeyNode(db, {
+      riskCardId: card.id,
+      content: "夹具-解决前记下的节点",
+      date: "2026-11-08",
+    });
+
+    resolveRiskCard(db, { riskCardId: card.id });
+
+    const today = openTodayPage(db);
+    const hidden = openTodayPage(db, { list: "hidden" });
+    const resolved = openTodayPage(db, { list: "resolved" });
+
+    assert.deepEqual(
+      today.riskCards.map((item) => item.title),
+      ["夹具-仍在今日"],
+    );
+    assert.equal(today.selectedRiskCardId, stay.id);
+    assert.deepEqual(
+      hidden.riskCards.map((item) => item.title),
+      [],
+    );
+    assert.deepEqual(
+      resolved.riskCards.map((item) => item.title),
+      ["夹具-准备解决"],
+    );
+    assert.equal(resolved.selectedRiskCardId, card.id);
+    assert.deepEqual(
+      resolved.keyNodes.map((node) => node.content),
+      ["夹具-解决前记下的节点"],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("重新打开风险卡后它回到今日列表，已解决里不再有它", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const card = insertFixtureRiskCard(db, { title: "夹具-准备重新打开" });
+    resolveRiskCard(db, { riskCardId: card.id });
+
+    reopenRiskCard(db, { riskCardId: card.id });
+
+    const today = openTodayPage(db);
+    const resolved = openTodayPage(db, { list: "resolved" });
+
+    assert.deepEqual(
+      today.riskCards.map((item) => item.title),
+      ["夹具-准备重新打开"],
+    );
+    assert.equal(today.selectedRiskCardId, card.id);
+    assert.deepEqual(
+      resolved.riskCards.map((item) => item.title),
+      [],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("未确认时删除会被拒绝，风险卡仍留在今日列表", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const card = insertFixtureRiskCard(db, { title: "夹具-不该被删" });
+
+    assert.throws(
+      () => deleteRiskCard(db, { riskCardId: card.id, confirmed: false }),
+      /确认/,
+    );
+
+    const today = openTodayPage(db);
+    assert.deepEqual(
+      today.riskCards.map((item) => item.title),
+      ["夹具-不该被删"],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("确认删除后，风险卡在今日、已隐藏、已解决里都读不到", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const todayCard = insertFixtureRiskCard(db, { title: "夹具-今日待删" });
+    insertFixtureKeyNode(db, {
+      riskCardId: todayCard.id,
+      content: "夹具-会跟着卡一起消失的节点",
+      date: "2026-11-13",
+    });
+    const hiddenCard = insertFixtureRiskCard(db, { title: "夹具-已隐藏待删" });
+    hideRiskCard(db, { riskCardId: hiddenCard.id });
+    const resolvedCard = insertFixtureRiskCard(db, { title: "夹具-已解决待删" });
+    resolveRiskCard(db, { riskCardId: resolvedCard.id });
+
+    deleteRiskCard(db, { riskCardId: todayCard.id, confirmed: true });
+    deleteRiskCard(db, { riskCardId: hiddenCard.id, confirmed: true });
+    deleteRiskCard(db, { riskCardId: resolvedCard.id, confirmed: true });
+
+    const today = openTodayPage(db, { riskCardId: todayCard.id });
+    const hidden = openTodayPage(db, {
+      list: "hidden",
+      riskCardId: hiddenCard.id,
+    });
+    const resolved = openTodayPage(db, {
+      list: "resolved",
+      riskCardId: resolvedCard.id,
+    });
+
+    assert.deepEqual(
+      today.riskCards.map((item) => item.title),
+      [],
+    );
+    assert.equal(today.selectedRiskCardId, null);
+    assert.deepEqual(
+      today.keyNodes.map((node) => node.content),
+      [],
+    );
+    assert.deepEqual(
+      hidden.riskCards.map((item) => item.title),
+      [],
+    );
+    assert.deepEqual(
+      resolved.riskCards.map((item) => item.title),
       [],
     );
   } finally {
@@ -47,6 +432,7 @@ test("今日列表只列出未隐藏且未解决的风险卡标题", () => {
 
     const page = openTodayPage(db);
 
+    assert.equal(page.list, "today");
     assert.deepEqual(
       page.riskCards.map((card) => card.title),
       ["夹具-跟进中"],
